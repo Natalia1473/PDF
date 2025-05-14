@@ -29,41 +29,41 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if doc.mime_type != "application/pdf":
         return await update.message.reply_text("Это не PDF.")
 
-    # 1) скачиваем во временный файл
+    # Скачиваем во временный файл
     file_path = f"/tmp/{doc.file_name}"
     new_file = await context.bot.get_file(doc.file_id)
     await new_file.download_to_drive(file_path)
 
-    # 2) извлекаем текст
+    # Извлекаем текст
     text = ""
     try:
         reader = PdfReader(file_path)
         for page in reader.pages:
-            page_text = page.extract_text() or ""
-            text += page_text + "\n"
+            text += (page.extract_text() or "") + "\n"
     except Exception as e:
         return await update.message.reply_text(f"Ошибка при чтении PDF: {e}")
 
     if not text.strip():
         return await update.message.reply_text("Не удалось извлечь текст.")
 
-    # Сохраняем в user_data для callback
+    # Сохраняем текст для последующих действий
     context.user_data["last_pdf_text"] = text
 
-    # 3) Отправляем сообщение с кнопкой
-    keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")]]
-    )
-    await update.message.reply_text(
-        "Ваш текст готов! Если хотите скачать в формате Word, нажмите на кнопку ниже.",
-        reply_markup=keyboard,
-    )
-
-    # 4) Отправляем текст порционно
+    # Отправляем текст порциями
     for i in range(0, len(text), 4096):
         await update.message.reply_text(text[i : i + 4096])
 
-# --- Callback для кнопки ---
+    # Кнопки: Скачать в Word и Загрузить ещё текст
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
+        [InlineKeyboardButton("🔄 Загрузить ещё текст", callback_data="start_over")],
+    ])
+    await update.message.reply_text(
+        "Ваш текст готов! Если хотите скачать в формате Word — нажмите на кнопку ниже, или загрузить другой PDF.",
+        reply_markup=keyboard,
+    )
+
+# --- Обработка нажатия Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -79,15 +79,29 @@ async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_T
     out_path = "/tmp/output.docx"
     doc.save(out_path)
 
-    # Отправляем файл
+    # Отправляем файл Word
     await context.bot.send_document(
         chat_id=update.effective_chat.id,
         document=open(out_path, "rb"),
         filename="converted.docx",
     )
 
-    # Убираем кнопки под сообщением
-    await query.edit_message_reply_markup(None)
+    # Кнопка загрузить ещё текст
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Загрузить ещё текст", callback_data="start_over")],
+    ])
+    await query.edit_message_text(
+        "Файл Word готов! Если хотите обработать ещё один PDF — нажмите кнопку ниже.",
+        reply_markup=keyboard,
+    )
+
+# --- Обработка нажатия Загрузить ещё текст ---
+async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    # Очищаем предыдущий текст
+    context.user_data.pop("last_pdf_text", None)
+    await query.edit_message_text("Пришлите, пожалуйста, новый PDF для обработки.")
 
 # --- Основная функция ---
 def main():
@@ -97,18 +111,18 @@ def main():
         return
 
     app = ApplicationBuilder().token(token).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern="download_word"))
+    app.add_handler(CallbackQueryHandler(start_over_callback, pattern="start_over"))
 
     # Webhook-настройки для Render
     host = os.environ.get("RENDER_EXTERNAL_URL")
     if not host:
         logger.error("RENDER_EXTERNAL_URL не задан")
         return
-    webhook_url = f"{host}/{token}"
     port = int(os.environ.get("PORT", 5000))
+    webhook_url = f"{host}/{token}"
 
     # Запуск встроенного webhook-сервера
     app.run_webhook(
