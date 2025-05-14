@@ -57,7 +57,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
 
     # настраиваем webhook
-    host = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+    host = os.environ.get("RENDER_EXTERNAL_URL")
     if not host:
         logger.error("RENDER_EXTERNAL_HOSTNAME не задан")
         return
