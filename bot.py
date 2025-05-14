@@ -56,20 +56,20 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
 
-    # настраиваем webhook
+        # берём полный HTTPS-URL Render’а
     host = os.environ.get("RENDER_EXTERNAL_URL")
     if not host:
         logger.error("RENDER_EXTERNAL_URL не задан")
         return
-    webhook_url = f"https://{host}/{token}"
-    app.bot.set_webhook(webhook_url)
+    webhook_url = f"{host}/{token}"
 
-    # запускаем встроенный сервер на нужном порту
     port = int(os.environ.get("PORT", 5000))
+    # run_webhook сам установит webhook и сразу запустит сервер
     app.run_webhook(
         listen="0.0.0.0",
         port=port,
         url_path=token,
+        webhook_url=webhook_url,
     )
 
 if __name__ == "__main__":
