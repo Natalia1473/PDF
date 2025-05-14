@@ -59,7 +59,7 @@ def main():
     # настраиваем webhook
     host = os.environ.get("RENDER_EXTERNAL_URL")
     if not host:
-        logger.error("RENDER_EXTERNAL_HOSTNAME не задан")
+        logger.error("RENDER_EXTERNAL_URL не задан")
         return
     webhook_url = f"https://{host}/{token}"
     app.bot.set_webhook(webhook_url)
