@@ -53,15 +53,34 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(text), 4096):
         await update.message.reply_text(text[i : i + 4096])
 
-    # Кнопки: Скачать в Word и Загрузить ещё текст
+    # Кнопки: Скопировать текст, Скачать в Word и Загрузить ещё PDF-файл
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
-        [InlineKeyboardButton("🔄 Загрузить ещё текст", callback_data="start_over")],
+        [
+            InlineKeyboardButton("📝 Скопировать текст", callback_data="copy_text"),
+            InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word"),
+        ],
+        [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
     ])
     await update.message.reply_text(
-        "Ваш текст готов! Если хотите скачать в формате Word — нажмите на кнопку ниже, или загрузить другой PDF.",
+        "Ваш текст готов! Выберите действие ниже:",
         reply_markup=keyboard,
     )
+
+# --- Обработка нажатия Скопировать текст ---
+async def copy_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    text = context.user_data.get("last_pdf_text")
+    if not text:
+        return await query.edit_message_text("Нет текста для копирования.")
+
+    # Отправляем текст порциями
+    for i in range(0, len(text), 4096):
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text[i : i + 4096]
+        )
 
 # --- Обработка нажатия Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,22 +105,21 @@ async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_T
         filename="converted.docx",
     )
 
-    # Кнопка загрузить ещё текст
+    # Кнопка Загрузить ещё PDF-файл
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Загрузить ещё текст", callback_data="start_over")],
+        [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
     ])
     await query.edit_message_text(
-        "Файл Word готов! Если хотите обработать ещё один PDF — нажмите кнопку ниже.",
+        "Файл Word готов! Если хотите загрузить ещё PDF-файл — нажмите кнопку ниже.",
         reply_markup=keyboard,
     )
 
-# --- Обработка нажатия Загрузить ещё текст ---
+# --- Обработка нажатия Загрузить ещё PDF-файл ---
 async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    # Очищаем предыдущий текст
     context.user_data.pop("last_pdf_text", None)
-    await query.edit_message_text("Пришлите, пожалуйста, новый PDF для обработки.")
+    await query.edit_message_text("Отправьте прямо в этот чат PDF-файл.")
 
 # --- Основная функция ---
 def main():
@@ -113,6 +131,7 @@ def main():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
+    app.add_handler(CallbackQueryHandler(copy_text_callback, pattern="copy_text"))
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern="download_word"))
     app.add_handler(CallbackQueryHandler(start_over_callback, pattern="start_over"))
 
