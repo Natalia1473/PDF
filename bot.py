@@ -53,46 +53,15 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(text), 4096):
         await update.message.reply_text(text[i : i + 4096])
 
-    # Кнопки: Скопировать текст, Скачать в Word и Загрузить ещё PDF-файл
+    # Кнопки: Скачать в Word и Загрузить ещё PDF-файл
     keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📝 Скопировать текст", callback_data="copy_text"),
-            InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word"),
-        ],
+        [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
         [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
     ])
     await update.message.reply_text(
         "Ваш текст готов! Выберите действие ниже:",
         reply_markup=keyboard,
     )
-
-# --- Обработка нажатия Скопировать текст: отправляем .txt файл ---
-async def copy_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    text = context.user_data.get("last_pdf_text")
-    if not text:
-        return await query.edit_message_text("Нет текста для копирования.")
-
-    # Генерируем .txt
-    out_path = "/tmp/output.txt"
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(text)
-
-    # Отправляем файл .txt
-    await context.bot.send_document(
-        chat_id=update.effective_chat.id,
-        document=open(out_path, "rb"),
-        filename="converted.txt",
-    )
-
-    # Оставляем кнопки: Скачать в Word и Загрузить ещё PDF-файл
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
-        [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
-    ])
-    await query.edit_message_reply_markup(reply_markup=keyboard)
 
 # --- Обработка нажатия Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,7 +115,6 @@ def main():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
-    app.add_handler(CallbackQueryHandler(copy_text_callback, pattern="copy_text"))
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern="download_word"))
     app.add_handler(CallbackQueryHandler(start_over_callback, pattern="start_over"))
 
