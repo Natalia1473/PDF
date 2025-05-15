@@ -66,14 +66,33 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
     )
 
-# --- Обработка нажатия Скопировать текст ---
+# --- Обработка нажатия Скопировать текст: отправляем .txt файл ---
 async def copy_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
+
     text = context.user_data.get("last_pdf_text")
     if not text:
-        return await query.answer(text="Нет текста для копирования.", show_alert=True)
-    # Отправляем алерт с текстом для копирования
-    await query.answer(text=text, show_alert=True)
+        return await query.edit_message_text("Нет текста для копирования.")
+
+    # Генерируем .txt
+    out_path = "/tmp/output.txt"
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    # Отправляем файл .txt
+    await context.bot.send_document(
+        chat_id=update.effective_chat.id,
+        document=open(out_path, "rb"),
+        filename="converted.txt",
+    )
+
+    # Оставляем кнопки: Скачать в Word и Загрузить ещё PDF-файл
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
+        [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
+    ])
+    await query.edit_message_reply_markup(reply_markup=keyboard)
 
 # --- Обработка нажатия Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,10 +121,7 @@ async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_T
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
     ])
-    await query.edit_message_text(
-        "Файл Word готов! Если хотите загрузить ещё PDF-файл — нажмите кнопку ниже.",
-        reply_markup=keyboard,
-    )
+    await query.edit_message_reply_markup(reply_markup=keyboard)
 
 # --- Обработка нажатия Загрузить ещё PDF-файл ---
 async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,10 +130,10 @@ async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Удаляем старую кнопку
     await query.edit_message_reply_markup(None)
     context.user_data.pop("last_pdf_text", None)
-    # Отправляем новое сообщение снизу
+    # Отправляем новое сообщение снизу с эмоджи
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="📥 Отправьте прямо в этот чат PDF-файл."
+        text="📥 Пришлите новый PDF-файл сюда."
     )
 
 # --- Основная функция ---
