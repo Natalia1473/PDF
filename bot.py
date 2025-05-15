@@ -69,18 +69,11 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Обработка нажатия Скопировать текст ---
 async def copy_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-
     text = context.user_data.get("last_pdf_text")
     if not text:
-        return await query.edit_message_text("Нет текста для копирования.")
-
-    # Отправляем текст порциями
-    for i in range(0, len(text), 4096):
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=text[i : i + 4096]
-        )
+        return await query.answer(text="Нет текста для копирования.", show_alert=True)
+    # Отправляем алерт с текстом для копирования
+    await query.answer(text=text, show_alert=True)
 
 # --- Обработка нажатия Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,8 +111,14 @@ async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_T
 async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    # Удаляем старую кнопку
+    await query.edit_message_reply_markup(None)
     context.user_data.pop("last_pdf_text", None)
-    await query.edit_message_text("Отправьте прямо в этот чат PDF-файл.")
+    # Отправляем новое сообщение снизу
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="📥 Отправьте прямо в этот чат PDF-файл."
+    )
 
 # --- Основная функция ---
 def main():
