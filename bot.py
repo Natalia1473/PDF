@@ -29,12 +29,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Обработка PDF ---
 async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # САМЫЙ БЫСТРЫЙ ОТВЕТ Telegram — до скачивания и обработки файла!
+    await update.message.reply_text("⏳ Обрабатываю файл, это может занять несколько секунд...")
+
     doc_file = update.message.document
     if doc_file.mime_type != "application/pdf":
-        return await update.message.reply_text("Это не PDF.")
-
-    # Быстрый ответ Telegram (чтобы webhook не упал по таймауту)
-    await update.message.reply_text("⏳ Обрабатываю файл, это может занять несколько секунд...")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Это не PDF."
+        )
+        return
 
     # Скачиваем PDF
     file_path = f"/tmp/{doc_file.file_name}"
