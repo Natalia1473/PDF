@@ -1,7 +1,7 @@
 import os
 import logging
 import re
-import fitz  # PyMuPDF для картинок
+import fitz  # PyMuPDF для извлечения изображений
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -33,7 +33,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if doc_file.mime_type != "application/pdf":
         return await update.message.reply_text("Это не PDF.")
 
-    # Моментальный ответ Telegram (чтобы webhook не упал по таймауту)
+    # Быстрый ответ Telegram (чтобы webhook не упал по таймауту)
     await update.message.reply_text("⏳ Обрабатываю файл, это может занять несколько секунд...")
 
     # Скачиваем PDF
@@ -85,23 +85,38 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(text), 4096):
         await context.bot.send_message(chat_id=update.effective_chat.id, text=text[i:i+4096])
 
-    # Отправляем картинки (если есть)
+    # Отправляем только уникальные картинки (например, максимум 10)
+    sent_images = set()
+    unique_images = []
     for img_bytes, ext in images:
+        img_hash = hash(img_bytes)
+        if img_hash not in sent_images:
+            unique_images.append((img_bytes, ext))
+            sent_images.add(img_hash)
+    for img_bytes, ext in unique_images[:10]:
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=img_bytes
         )
 
-    # Кнопки после текста и картинок
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
-        [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
-    ])
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="Ваш текст готов! Выберите действие ниже:",
-        reply_markup=keyboard,
-    )
+    # Теперь кнопки после текста и картинок
+    try:
+        logger.info("Отправлены все картинки, сейчас будут отправлены кнопки.")
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
+            [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
+        ])
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Ваш текст готов! Выберите действие ниже:",
+            reply_markup=keyboard,
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке кнопок: {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Произошла ошибка при отправке кнопок. Попробуйте ещё раз."
+        )
 
 # --- Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
