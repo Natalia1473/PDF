@@ -1,7 +1,7 @@
 import os
 import logging
 import re
-import fitz  # PyMuPDF для извлечения изображений
+import fitz  # PyMuPDF для картинок
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -33,6 +33,9 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if doc_file.mime_type != "application/pdf":
         return await update.message.reply_text("Это не PDF.")
 
+    # Моментальный ответ Telegram (чтобы webhook не упал по таймауту)
+    await update.message.reply_text("⏳ Обрабатываю файл, это может занять несколько секунд...")
+
     # Скачиваем PDF
     file_path = f"/tmp/{doc_file.file_name}"
     new_file = await context.bot.get_file(doc_file.file_id)
@@ -46,15 +49,24 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
             page_text = page.extract_text() or ""
             raw_text += page_text + "\n"
     except Exception as e:
-        return await update.message.reply_text(f"Ошибка при чтении PDF: {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Ошибка при чтении PDF: {e}"
+        )
+        return
 
-    # Чистим текст: убираем дефисы на концах строк и лишние переводы
+    # Чистим текст: дефисы на концах строк, все переносы на пробел, множественные пробелы к одному
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", raw_text)
     text = text.replace("\n", " ")
     text = re.sub(r" {2,}", " ", text).strip()
 
     if not text:
-        return await update.message.reply_text("Не удалось извлечь текст.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Не удалось извлечь текст."
+        )
+        return
+
     context.user_data['last_pdf_text'] = text
 
     # Извлекаем картинки
@@ -71,7 +83,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Отправляем текст порциями
     for i in range(0, len(text), 4096):
-        await update.message.reply_text(text[i:i+4096])
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text[i:i+4096])
 
     # Отправляем картинки (если есть)
     for img_bytes, ext in images:
@@ -85,8 +97,9 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
         [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
     ])
-    await update.message.reply_text(
-        "Ваш текст готов! Выберите действие ниже:",
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Ваш текст готов! Выберите действие ниже:",
         reply_markup=keyboard,
     )
 
@@ -137,15 +150,16 @@ def main():
         return
 
     app = (
-    ApplicationBuilder()
-    .token(token)
-    .build()
-)
+        ApplicationBuilder()
+        .token(token)
+        .build()
+    )
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern='download_word'))
     app.add_handler(CallbackQueryHandler(start_over_callback, pattern='start_over'))
 
+    # Webhook-настройки для Render
     host = os.getenv('RENDER_EXTERNAL_URL')
     if not host:
         logger.error('RENDER_EXTERNAL_URL не задан')
