@@ -152,7 +152,7 @@ def main():
         logger.error('RENDER_EXTERNAL_URL не задан')
         return
     port = int(os.getenv('PORT', 5000))
-    webhook_url = f\"{host}/{token}\"
+    webhook_url = f"{host}/{token}"
 
     app.run_webhook(
         listen='0.0.0.0',
