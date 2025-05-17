@@ -17,6 +17,7 @@ from telegram.ext import (
 )
 from PyPDF2 import PdfReader
 
+# --- Логирование ---
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -47,7 +48,6 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pdf_doc = fitz.open(file_path)
     reader = PdfReader(file_path)
     docx_blocks = []
-    all_images_for_telegram = []
     sent_hashes = set()
     num_pages = len(pdf_doc)
 
@@ -65,7 +65,6 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
             docx_blocks.append(("text", page_text))
 
         # --- картинки ---
-        img_count = 0
         for img in pdf_doc[i].get_images(full=True):
             xref = img[0]
             img_dict = pdf_doc.extract_image(xref)
@@ -74,16 +73,12 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
             img_hash = hash(img_bytes)
             if img_hash not in sent_hashes:
                 docx_blocks.append(("image", (img_bytes, ext)))
-                all_images_for_telegram.append((img_bytes, ext))
                 sent_hashes.add(img_hash)
-                img_count += 1
-                if img_count >= 10:  # на случай защиты от мусора
-                    break
 
     # --- сохраняем блоки для Word ---
     context.user_data['last_pdf_blocks'] = docx_blocks
 
-    # --- отправка в чат: текст и картинки (только уникальные) ---
+    # --- отправка в чат: текст и картинки (только уникальные, в порядке следования) ---
     for block_type, block_val in docx_blocks:
         if block_type == "text":
             for i in range(0, len(block_val), 4096):
