@@ -136,24 +136,24 @@ def main():
         logger.error('TELEGRAM_BOT_TOKEN не задан')
         return
 
-    app = ApplicationBuilder()
+    app = (
+        ApplicationBuilder()
         .token(token)
         .request_kwargs({'read_timeout': 60, 'connect_timeout': 20})
         .build()
+    )
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern='download_word'))
     app.add_handler(CallbackQueryHandler(start_over_callback, pattern='start_over'))
 
-    # Webhook-настройки для Render
     host = os.getenv('RENDER_EXTERNAL_URL')
     if not host:
         logger.error('RENDER_EXTERNAL_URL не задан')
         return
     port = int(os.getenv('PORT', 5000))
-    webhook_url = f"{host}/{token}"
+    webhook_url = f\"{host}/{token}\"
 
-    # Запуск webhook-сервера
     app.run_webhook(
         listen='0.0.0.0',
         port=port,
