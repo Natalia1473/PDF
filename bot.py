@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 # --- /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Пришли мне PDF — я верну тебе текст и картинки, если они есть.")
+    await update.message.reply_text(
+        "Привет! Пришли мне PDF — я верну тебе текст и картинки, если они есть."
+    )
 
 # --- Обработка PDF ---
 async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -31,49 +33,54 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if doc_file.mime_type != "application/pdf":
         return await update.message.reply_text("Это не PDF.")
 
-    # скачиваем PDF
+    # Скачиваем PDF
     file_path = f"/tmp/{doc_file.file_name}"
     new_file = await context.bot.get_file(doc_file.file_id)
     await new_file.download_to_drive(file_path)
 
-    # извлекаем текст
-    raw = ""
+    # Извлекаем текст
+    raw_text = ""
     try:
         reader = PdfReader(file_path)
-        for p in reader.pages:
-            raw += p.extract_text() or ''
-            raw += '\n'
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            raw_text += page_text + "\n"
     except Exception as e:
         return await update.message.reply_text(f"Ошибка при чтении PDF: {e}")
 
-    # чистим неоправданные переносы и пробелы между предложениями
-    # убираем переносы строк после дефиса
-    text = re.sub(r"-\s*\n", "", raw)
-    # заменяем все переносы и множественные пробелы на один пробел
-    text = re.sub(r"\s*\n+\s*", " ", text)
-    text = re.sub(r"[ ]{2,}", " ", text).strip()
+    # Чистим текст: убираем дефисы на концах строк и лишние переводы
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", raw_text)
+    text = text.replace("\n", " ")
+    text = re.sub(r" {2,}", " ", text).strip()
 
     if not text:
         return await update.message.reply_text("Не удалось извлечь текст.")
     context.user_data['last_pdf_text'] = text
 
-    # извлекаем картинки
+    # Извлекаем картинки
     images = []
     try:
-        pdf = fitz.open(file_path)
-        for page in pdf:
+        pdf_doc = fitz.open(file_path)
+        for page in pdf_doc:
             for img in page.get_images(full=True):
                 xref = img[0]
-                base = pdf.extract_image(xref)
-                images.append((base['image'], base['ext']))
-    except Exception:
-        images = []
+                img_dict = pdf_doc.extract_image(xref)
+                images.append((img_dict['image'], img_dict['ext']))
+    except Exception as e:
+        logger.warning(f"Ошибка при извлечении изображений: {e}")
 
-    # отправляем текст порциями
+    # Отправляем текст порциями
     for i in range(0, len(text), 4096):
         await update.message.reply_text(text[i:i+4096])
 
-    # кнопки
+    # Отправляем картинки (если есть)
+    for img_bytes, ext in images:
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=img_bytes
+        )
+
+    # Кнопки после текста и картинок
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📥 Скачать в Word", callback_data="download_word")],
         [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
@@ -83,13 +90,6 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
     )
 
-    # отправляем картинки, если они есть
-    for img_bytes, ext in images:
-        await context.bot.send_photo(
-            chat_id=update.effective_chat.id,
-            photo=img_bytes
-        )
-
 # --- Скачать в Word ---
 async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -98,20 +98,20 @@ async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_T
     if not text:
         return await query.edit_message_text("Нет текста для генерации Word.")
 
-    # создаём .docx
+    # Создаём .docx, разбиваем по предложениям
     doc = Document()
-    for line in text.split('. '):
-        doc.add_paragraph(line.strip() + '.')
-    out = "/tmp/output.docx"
-    doc.save(out)
+    for sentence in re.split(r'(?<=[.!?]) +', text):
+        doc.add_paragraph(sentence)
+    out_path = "/tmp/output.docx"
+    doc.save(out_path)
 
     await context.bot.send_document(
         chat_id=update.effective_chat.id,
-        document=open(out, 'rb'),
+        document=open(out_path, 'rb'),
         filename='converted.docx'
     )
 
-    # обновляем кнопки
+    # Обновляем кнопки
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Загрузить ещё PDF-файл", callback_data="start_over")],
     ])
@@ -123,12 +123,13 @@ async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     context.user_data.pop('last_pdf_text', None)
     await query.edit_message_reply_markup(None)
+    # Новое сообщение внизу чата
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text="🔄 Пришлите новый PDF-файл сюда."
     )
 
-# --- main ---
+# --- Основная функция ---
 def main():
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
@@ -141,13 +142,15 @@ def main():
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern='download_word'))
     app.add_handler(CallbackQueryHandler(start_over_callback, pattern='start_over'))
 
-    # webhook для Render
+    # Webhook-настройки для Render
     host = os.getenv('RENDER_EXTERNAL_URL')
     if not host:
         logger.error('RENDER_EXTERNAL_URL не задан')
         return
     port = int(os.getenv('PORT', 5000))
     webhook_url = f"{host}/{token}"
+
+    # Запуск webhook-сервера
     app.run_webhook(
         listen='0.0.0.0',
         port=port,
