@@ -136,7 +136,10 @@ def main():
         logger.error('TELEGRAM_BOT_TOKEN не задан')
         return
 
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder()
+        .token(token)
+        .request_kwargs({'read_timeout': 60, 'connect_timeout': 20})
+        .build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
     app.add_handler(CallbackQueryHandler(download_word_callback, pattern='download_word'))
