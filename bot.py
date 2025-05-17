@@ -2,6 +2,8 @@ import os
 import logging
 import re
 import fitz  # PyMuPDF для извлечения изображений
+import tempfile
+import docx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -71,9 +73,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    context.user_data['last_pdf_text'] = text
-
-    # Извлекаем картинки
+    # --- Извлекаем картинки и убираем дубликаты ---
     images = []
     try:
         pdf_doc = fitz.open(file_path)
@@ -85,11 +85,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"Ошибка при извлечении изображений: {e}")
 
-    # Отправляем текст порциями
-    for i in range(0, len(text), 4096):
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text[i:i+4096])
-
-    # Отправляем только уникальные картинки (например, максимум 10)
+    # Только уникальные картинки (макс. 10)
     sent_images = set()
     unique_images = []
     for img_bytes, ext in images:
@@ -97,7 +93,18 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if img_hash not in sent_images:
             unique_images.append((img_bytes, ext))
             sent_images.add(img_hash)
-    for img_bytes, ext in unique_images[:10]:
+    unique_images = unique_images[:10]  # Ограничение по количеству
+
+    # Сохраняем для Word
+    context.user_data['last_pdf_text'] = text
+    context.user_data['last_pdf_images'] = unique_images
+
+    # Отправляем текст порциями
+    for i in range(0, len(text), 4096):
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text[i:i+4096])
+
+    # Отправляем только уникальные картинки
+    for img_bytes, ext in unique_images:
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=img_bytes
@@ -127,13 +134,28 @@ async def download_word_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     text = context.user_data.get('last_pdf_text')
+    images = context.user_data.get('last_pdf_images', [])
+
     if not text:
         return await query.edit_message_text("Нет текста для генерации Word.")
 
-    # Создаём .docx, разбиваем по предложениям
     doc = Document()
+    # Добавляем текст (разбиваем по предложениям)
     for sentence in re.split(r'(?<=[.!?]) +', text):
         doc.add_paragraph(sentence)
+
+    # Добавляем картинки (максимум 10)
+    from docx.shared import Inches
+    max_images = 10
+    for img_bytes, ext in images[:max_images]:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.' + ext) as tmp_img:
+            tmp_img.write(img_bytes)
+            tmp_img.flush()
+            try:
+                doc.add_picture(tmp_img.name, width=Inches(5))
+            except Exception as e:
+                logger.warning(f'Не удалось вставить картинку: {e}')
+
     out_path = "/tmp/output.docx"
     doc.save(out_path)
 
@@ -154,6 +176,7 @@ async def start_over_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     context.user_data.pop('last_pdf_text', None)
+    context.user_data.pop('last_pdf_images', None)
     await query.edit_message_reply_markup(None)
     # Новое сообщение внизу чата
     await context.bot.send_message(
