@@ -1,0 +1,4 @@
+python-telegram-bot[webhooks]==20.3
+PyPDF2==3.0.1
+python-docx==1.1.2
+PyMuPDF==1.22.5
