@@ -177,5 +177,6 @@ def main():
         webhook_url=webhook_url
     )
 
-if __name__ == '__main__':
-    main()
+def main():
+    # ... (инициализация app, хендлеры)
+    app.run_polling()
